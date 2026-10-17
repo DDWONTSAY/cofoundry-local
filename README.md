@@ -32,6 +32,8 @@ Requirements for a source build: Windows 10/11 x64, .NET Framework 4.8, and Node
 powershell -File desktop/build.ps1
 ```
 
+If local PowerShell policy does not allow scripts, run `desktop\build.cmd` instead. This does not require changing the machine's execution policy.
+
 Launch `共创团队.exe` and keep its adjacent configuration, `server.mjs`, `lib/`, `public/`, and `runtime/node.exe` together. The desktop connects to or starts the local server and shares data with the web interface. Compiled executables and the copied runtime are excluded from Git.
 
 ### Local web interface
