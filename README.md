@@ -4,6 +4,18 @@ A local multi-model AI project workspace with configurable team hierarchies, col
 
 [中文使用说明](README.zh-CN.md)
 
+## Desktop editions and project controls
+
+`共创团队.exe` starts the Chinese edition; `Cofoundry.exe` starts the English edition. Both use the same local data and cannot run simultaneously. Existing project content is preserved in its original language. Projects created in the English edition use English default roles, demo outputs, and live-model response instructions. The retained web interface is currently Chinese.
+
+The Team page now defaults to an interactive organization chart. Click a member to edit their role, level, manager, and model connection, or add a direct report. Table editing remains available. Team changes still invalidate prior plans and results.
+
+Details & instructions shows the current plan, task progress, deliverables, activity, and a persistent instruction thread. Address the whole team or one member. Instructions received during execution are included in subsequent model calls; replies are queued until the current run finishes. Sending an instruction does not modify or approve the plan. Scope changes must be incorporated into a revised plan and approved. Replies consume the normal project API call budget. Each project supports up to 100 instructions of up to 8,000 characters each.
+
+The conversation uses distinct sender colors, timestamps, and queued/replying/completed/error states. Send with Ctrl+Enter and continue typing while replies update. Each member receives their relevant conversation history (the latest 20 instructions and their own replies). Responses appear when a call finishes; token streaming is not supported. Pause stops current work and cancels queued instructions; send a new message to resume the conversation.
+
+Both editions support Ctrl+S in editable brief, plan, and team pages, preserve unsaved edits when actions are cancelled, retain expanded discussion sections during updates, and offer a separate reader for long text.
+
 ## Status
 
 This repository preserves a development baseline. Backend tests and native UI construction/binding self-tests have passed; the desktop window has been observed loading existing projects. Full desktop interaction, lifecycle, and live provider acceptance are still in progress. See [acceptance tracking](desktop/ACCEPTANCE.md).

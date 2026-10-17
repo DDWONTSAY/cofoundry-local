@@ -30,3 +30,5 @@ jobs:
           $result = Get-Content '.\desktop-self-test.txt' -Raw
           if (-not $result.StartsWith('PASS:')) { throw $result }
           Write-Output $result
+          $english = Start-Process -FilePath '.\Cofoundry.exe' -ArgumentList '--self-test' -WindowStyle Hidden -PassThru -Wait
+          if ($english.ExitCode -ne 0) { throw 'English desktop self-test failed' }

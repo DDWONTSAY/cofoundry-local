@@ -7,16 +7,54 @@ import {createApp} from '../server.mjs';
 import {callProvider,renderTemplate} from '../lib/providers.mjs';
 import {validatePlan,validateTeam} from '../lib/domain.mjs';
 
+test('English demo and targeted instructions preserve approval and persist replies',async t=>{
+  const f=await fixture(t),created=await f.post('projects/create',{name:'English demo',goal:'Write a report',locale:'en'}),projectId=created.id;
+  let p=(await f.state()).projects[0];assert.equal(p.team[0].name,'Project lead');
+  assert.equal((await f.post('projects/command',{projectId,targetId:'missing',text:'Hello'})).status,400);
+  await f.post('projects/discuss',{projectId});
+  await f.post('projects/command',{projectId,targetId:p.team[1].id,text:'List assumptions explicitly.'});
+  p=(await f.idle()).projects[0];assert.equal(p.commands[0].status,'done');assert.equal(p.commands[0].replies.length,1);assert.equal(p.commands[0].replies[0].agentId,p.team[1].id);
+  assert.match(p.plan.summary,/Demo plan/);assert.equal(Object.keys(p.results).length,0);
+  await f.post('projects/approve',{projectId});p=(await f.state()).projects[0];const hash=p.approval.hash;
+  await f.post('projects/command',{projectId,text:'Review the plan, do not execute.'});p=(await f.idle()).projects[0];
+  assert.equal(p.commands[1].replies.length,3);assert.equal(p.approval.hash,hash);assert.equal(p.status,'approved');assert.equal(Object.keys(p.results).length,0);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(f.dataDir,'workspace.json'))).projects[0].commands.length,2);
+});
+
 async function fixture(t,modelCall){
   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'cofoundry-test-'));
   const app=createApp({dataDir,modelCall});await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
   const origin=`http://127.0.0.1:${app.server.address().port}`;
-  t.after(async()=>{for(const c of app.active.values())c.abort();await new Promise(resolve=>app.server.close(resolve));fs.rmSync(dataDir,{recursive:true,force:true});});
+  t.after(async()=>{for(const c of [...app.active.values(),...app.commandWorkers.values()])c.abort();await idle();await new Promise(resolve=>app.server.close(resolve));fs.rmSync(dataDir,{recursive:true,force:true});});
   const post=async(route,body={})=>{const r=await fetch(origin+'/api/'+route,{method:'POST',headers:{'Content-Type':'application/json','X-Cofoundry':'local'},body:JSON.stringify(body)});return {status:r.status,...await r.json()};};
   const state=async()=>await (await fetch(origin+'/api/state')).json();
   const idle=async()=>{for(let n=0;n<300;n++){const s=await state();if(!s.active.length)return s;await new Promise(r=>setTimeout(r,20));}throw new Error('timeout');};
   return {...app,origin,post,state,idle,dataDir};
 }
+test('live instructions respect recipients, call limits and pause queued delivery',async t=>{
+  const calls=[];
+  const f=await fixture(t,async(provider,messages)=>{calls.push({model:provider.model,prompt:messages.at(-1).content});return {text:'Acknowledged'};});
+  const {id:projectId}=await f.post('projects/create',{goal:'Test instructions'});
+  let p=(await f.state()).projects[0];
+  await f.post('projects/discuss',{projectId});
+  await f.post('projects/command',{projectId,targetId:p.team[1].id,text:'Queued before pause'});
+  await f.post('projects/pause',{projectId});p=(await f.idle()).projects[0];
+  assert.equal(p.commands[0].status,'failed');assert.deepEqual(p.commands[0].replies,[]);
+  const team=[];
+  for(let i=0;i<p.team.length;i++){
+    const provider=await f.post('providers/save',{name:'Member '+i,model:'model-'+i,endpoint:'https://example.invalid/api',protocol:'chat'});
+    team.push({...p.team[i],providerId:provider.id});
+  }
+  await f.post('projects/save',{projectId,mode:'live',team,maxCalls:1});
+  await f.post('projects/command',{projectId,targetId:team[1].id,text:'Only the solution lead should receive this.'});
+  p=(await f.idle()).projects[0];assert.equal(p.commands[1].status,'done');
+  assert.equal(calls.length,1);assert.equal(calls[0].model,'model-1');assert.match(calls[0].prompt,/Only the solution lead/);
+  await f.post('projects/command',{projectId,targetId:team[0].id,text:'A separate instruction'});
+  p=(await f.idle()).projects[0];assert.equal(p.commands[2].status,'failed');assert.equal(calls.length,1);assert.equal(p.calls,1);
+  await f.post('projects/save',{projectId,maxCalls:2});
+  await f.post('projects/command',{projectId,targetId:team[0].id,text:'Try again'});await f.idle();
+  assert.equal(calls.length,2);assert.doesNotMatch(calls[1].prompt,/Only the solution lead/);
+});
 test('approval gate, discussion, editing, DAG execution and persisted local secrets',async t=>{
   const f=await fixture(t);
   const made=await f.post('projects/create',{name:'Test',goal:'Generate a report'}),projectId=made.id;
