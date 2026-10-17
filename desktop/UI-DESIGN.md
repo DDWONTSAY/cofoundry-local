@@ -23,3 +23,14 @@ These are design references, not imported components or copied source. The Windo
 - Neutral cards, improved spacing, and more readable task/team tables.
 
 The application UI remains Chinese. The repository overview and commit messages use English.
+
+## Usability follow-up
+
+- Cancelling an action preserves unsaved controls instead of rebuilding the page.
+- The unsaved indicator updates immediately; Ctrl+S uses the same save action as the visible button.
+- Background updates preserve the page scroll position and disclosure state, and only rebuild when project data changes.
+- Discussions and deliverables offer a separate resizable reading window and a copy action.
+- Execution includes a progress bar; invalid team levels use a specific, readable error.
+- Dialogs are centered and constrained after display scaling; sidebar overflow is reduced.
+
+The native self-test includes a regression check for unsaved content preservation after a cancelled operation.

@@ -1,0 +1,32 @@
+name: Validate source
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Test backend and provider adapters
+        run: node --test tests/workflow.test.mjs
+      - name: Build Windows desktop
+        shell: pwsh
+        run: ./desktop/build.ps1
+      - name: Test native page construction and bindings
+        shell: pwsh
+        run: |
+          $testProcess = Start-Process -FilePath '.\共创团队.exe' -ArgumentList '--self-test' -WindowStyle Hidden -PassThru -Wait
+          if ($testProcess.ExitCode -ne 0) { throw 'Native self-test failed' }
+          $result = Get-Content '.\desktop-self-test.txt' -Raw
+          if (-not $result.StartsWith('PASS:')) { throw $result }
+          Write-Output $result
