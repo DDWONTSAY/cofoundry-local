@@ -1,45 +1,93 @@
-# 共创团队 · 本机多模型项目平台
+# Cofoundry Local
 
-运行环境：Node.js 22 或更高版本。无第三方运行依赖。
+A local multi-model AI project workspace with configurable team hierarchies, collaborative planning, human approval, and parallel text delivery. Includes a native Windows desktop application and a local web interface.
 
-## 启动
+[中文使用说明](README.zh-CN.md)
 
-在本目录运行 `node server.mjs`，打开 http://127.0.0.1:4317 。也可双击 `启动平台.cmd`，脚本会优先使用系统 Node，找不到时尝试此电脑的 Codex 内置 Node。只能通过本机 127.0.0.1 访问，不应直接暴露到公网。
+## Status
 
-## 核心流程
+This repository preserves a development baseline. Backend tests and native UI construction/binding self-tests have passed; the desktop window has been observed loading existing projects. Full desktop interaction, lifecycle, and live provider acceptance are still in progress. See [acceptance tracking](desktop/ACCEPTANCE.md).
 
-1. 创建项目，填写目标、约束、验收要求。
-2. 在 API 连接中填写完整请求地址、模型 ID、API 密钥，并测试连接。
-3. 在团队组织中给成员配置岗位、层级、直属负责人和模型连接。允许同一模型承担多个岗位，支持 1–12 层，推荐 3 或 4 层。
-4. 在项目总览切换至真实 API 模式并保存。默认是明确标注的离线演示模式，不消耗 API。
-5. 开始讨论：全体成员独立提案，再互相评议；层级编号最小的第一位成员汇总结构化计划。
-6. 用户可编辑摘要、风险、任务、负责人、依赖和验收标准，保存后明确批准。
-7. 点击启动执行。任务按依赖并行，支持暂停、重试未完成任务。最后一位成员生成审核意见，用户最终验收。
-8. 导出 Markdown 保存计划、讨论和成果。
+Kaspersky previously detected and deleted the locally compiled executable. The exact detection cause remains unresolved. A successful build or self-test does not establish antivirus clearance. See the [event record](desktop/STATUS.md).
 
-## API 适配
+## Workflow
 
-- Chat Completions 兼容协议：发送 `model/messages/max_tokens/stream:false`，读取 `choices.0.message.content`。
-- Anthropic Messages 协议：system 独立，使用 `x-api-key` 与 `anthropic-version`，读取文本内容块。
-- 自定义 HTTP JSON：配置完整 POST 地址、请求头模板、请求体模板与响应文本路径。支持 `{{model}}`、`{{messages}}`、`{{system}}`、`{{prompt}}`、`{{apiKey}}`、`{{maxTokens}}`。整个 JSON 值使用变量时保留数组/数字类型，字符串内替换则作为字符串。JSON 序列化处理引号转义。
+1. Define the project goal, constraints, and acceptance criteria.
+2. Configure API connections and assign models to team members.
+3. Set roles, reporting relationships, and hierarchy depth (1–12 levels; 3 or 4 recommended).
+4. Let members propose independently, review each other's ideas, and produce a combined plan.
+5. Edit the plan and explicitly approve its current revision.
+6. Execute tasks concurrently as their dependencies become ready.
+7. Review the results and give final human acceptance.
 
-例如请求体 `{"model":"{{model}}","messages":"{{messages}}","stream":false}`，响应路径 `choices.0.message.content`。供应商不接受 `max_tokens` 时可改用自定义模板使用其要求的参数。
+Demo mode runs offline with clearly labeled example outputs. Live mode calls the configured providers. Editing a plan invalidates its approval and clears prior results; export anything you need to retain first.
 
-“可配置接入”不代表所有协议自动兼容。目前仅支持同步 HTTP JSON 文本接口，流式、OAuth、异步任务轮询、图片、工具调用和复杂签名需要新增适配器。自定义接口返回内容须为字符串。
+## Run
 
-## 数据与运行约束
+### Windows desktop
 
-- 项目、讨论、成果保存在 `data/workspace.json`。API 密钥用 AES-256-GCM 加密；解密密钥在 `data/local.key`。备份应一起备份，且限制对本机数据目录的访问；这不等同于系统凭据保险库。拥有这两个文件的用户可以解密密钥。
-- 密钥不返回前端。请勿把密钥直接写入自定义请求头或请求体模板，使用 `{{apiKey}}`。
-- 项目数据保存在本机；真实运行会发送项目目标、讨论和相关成果到对应 API。调用次数包含失败尝试，测试连接不计入项目次数。
-- 默认最多 3 项并行，累计调用上限 80 次，单次请求超时 120 秒，无自动付费重试。用量记录依赖供应商返回；本版未计算金额预算。
-- 未批准或修改后批准已失效的计划不能执行。修改目标、约束、团队或模式会清空旧计划和成果，修改计划也会清空旧成果；请先导出需要保留的历史。本版暂未提供版本快照库。
-- 暂停将取消本机待处理请求；供应商已收到的请求可能继续计费。重启服务会将中断项目标记为可恢复状态，已完成任务保留。
-- 本版聚焦文本交付。不附带浏览、代码执行、文件编辑或外部发布工具。模型不应声称完成其未实际执行的操作。审核意见供参考，最终由用户验收；最后一位成员可能参与前面的执行，并非严格独立的审计隔离。
-- 同一计划里的任务依据依赖图执行；组织上下级是责任配置，不强制增加逐层审批。项目层级自定义范围 1–12，团队 2–12 人，任务 1–30 项。
+Requirements for a source build: Windows 10/11 x64, .NET Framework 4.8, and Node.js 22+ on PATH.
 
-## 验证
+```powershell
+powershell -File desktop/build.ps1
+```
 
-`node --test tests/workflow.test.mjs` 验证：用户批准门槛、编辑撤销批准、讨论到执行完整流程、任务依赖、暂停恢复、密钥不泄漏到前端/明文项目文件、三种 API 适配、请求来源检查。使用本机演示与模拟 API，不消耗真实供应商额度。
+Launch `共创团队.exe` and keep its adjacent configuration, `server.mjs`, `lib/`, `public/`, and `runtime/node.exe` together. The desktop connects to or starts the local server and shares data with the web interface. Compiled executables and the copied runtime are excluded from Git.
 
-主要文件：`server.mjs` 本机服务和协作流程，`lib/providers.mjs` 接口适配，`lib/domain.mjs` 校验，`lib/store.mjs` 持久化与密钥加密，`public/` 用户界面。
+### Local web interface
+
+```sh
+node server.mjs
+```
+
+Open `http://127.0.0.1:4317`. The service binds to loopback and should not be exposed to the public internet. No third-party runtime packages are required.
+
+## Provider support
+
+- Chat Completions compatible HTTP JSON APIs.
+- Anthropic Messages APIs.
+- Custom JSON request/header templates and a dot-separated response text path.
+
+Custom templates support `{{model}}`, `{{messages}}`, `{{system}}`, `{{prompt}}`, `{{apiKey}}`, and `{{maxTokens}}`. Use the key placeholder instead of embedding credentials in templates.
+
+This version supports synchronous text responses. Streaming, OAuth, complex request signatures, asynchronous polling, media, and tool execution need additional adapters. It produces text deliverables; it does not browse, execute generated code, edit external files, or publish artifacts autonomously.
+
+## Local data and limits
+
+Projects are stored in `data/workspace.json`. API keys are encrypted with AES-256-GCM using `data/local.key`; access to both files permits decryption. This is not an operating-system credential vault. Live runs send relevant project content to the API endpoints you configure.
+
+The default is 3 concurrent tasks, 80 cumulative API calls per project, and a 120-second request timeout. Failed attempts count toward the limit. There is no currency budget accounting. Cancellation cannot undo provider-side processing or charges.
+
+The highest-ranked first member synthesizes the plan; the final team member supplies a review. Reporting relationships do not introduce additional approval gates, and the reviewer may also execute tasks. Human acceptance remains final.
+
+## Validation
+
+```sh
+node --test tests/workflow.test.mjs
+```
+
+Tests cover approval gating and invalidation, discussion-to-delivery flow, task dependencies, pause/resume, credential handling, provider adapters, and request origin checks. They use demo and mocked local APIs, not paid provider calls.
+
+After a Windows build, run `共创团队.exe --self-test` and inspect `desktop-self-test.txt`. This verifies native page construction, grid bindings, and JSON round-tripping; it is not a substitute for interactive acceptance.
+
+## History and recovery
+
+Use `git log --oneline` to inspect saved versions. To inspect a previous revision without replacing current work:
+
+```sh
+git worktree add --detach ../cofoundry-recovery <commit>
+```
+
+Rebuild from that checkout as needed. Git excludes project data, keys, logs, runtimes, and executables. Source history does not back up project data. Pause tasks and stop the service before privately copying the entire `data/` directory; stop the service again before restoring it. Never upload that directory to the repository.
+
+## Layout
+
+| Path | Purpose |
+| --- | --- |
+| `desktop/` | Native Windows client and build script |
+| `server.mjs` | Local service and project orchestration |
+| `lib/providers.mjs` | API protocol adapters |
+| `lib/domain.mjs` | Team and plan validation |
+| `lib/store.mjs` | Persistence and key encryption |
+| `public/` | Local web interface |
+| `tests/` | Backend and adapter acceptance tests |
