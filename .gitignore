@@ -1,0 +1,7 @@
+data/
+*.log
+runtime/
+*.exe
+*.zip
+desktop-self-test.txt
+artifacts/
