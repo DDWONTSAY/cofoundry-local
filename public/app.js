@@ -66,7 +66,7 @@ document.addEventListener('submit',async e=>{
     if(form.id==='provider-form'){await api('providers/save',{...data,id:form.dataset.id});$('#dialog').close();toast('API 连接已保存');}
     if(form.id==='project-form'){await api('projects/save',{...data,projectId:p.id});toast('任务书已保存');}
     if(form.id==='plan-form'){if(Object.keys(p.results).length&&!confirm('保存修改会清空旧成果并要求重新批准。继续？'))return;await api('projects/plan',{projectId:p.id,plan:extractPlan()});toast('计划修改已保存，请批准新版本');}
-    if(form.id==='team-form'){const team=[...document.querySelectorAll('.team-card')].map(el=>Object.fromEntries([['id',el.dataset.agentId],...['name','role','providerId','managerId','level'].map(k=>[k,k==='level'?Number(el.querySelector(`[data-field="${k}"]`).value):el.querySelector(`[data-field="${k}"]`).value])]));await api('projects/save',{projectId:p.id,levels:Number(data.levels),team});toast('团队已保存，请重新制定计划');}
+    if(form.id==='team-form'){const team=[...document.querySelectorAll('.team-card')].map(el=>Object.fromEntries([['department',p.team.find(a=>a.id===el.dataset.agentId)?.department||''],['id',el.dataset.agentId],...['name','role','providerId','managerId','level'].map(k=>[k,k==='level'?Number(el.querySelector(`[data-field="${k}"]`).value):el.querySelector(`[data-field="${k}"]`).value])]));await api('projects/save',{projectId:p.id,levels:Number(data.levels),team});toast('团队已保存，请重新制定计划');}
     dirty=false;await refresh();
   }catch(error){toast(error.message);}finally{busy=false;if(submit)submit.disabled=false;}
 });

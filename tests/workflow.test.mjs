@@ -10,6 +10,8 @@ import {validatePlan,validateTeam} from '../lib/domain.mjs';
 test('English demo and targeted instructions preserve approval and persist replies',async t=>{
   const f=await fixture(t),created=await f.post('projects/create',{name:'English demo',goal:'Write a report',locale:'en'}),projectId=created.id;
   let p=(await f.state()).projects[0];assert.equal(p.team[0].name,'Project lead');
+  await f.post('projects/save',{projectId,team:p.team.map((a,i)=>({...a,department:i===2?'Quality':'Research'}))});
+  p=(await f.state()).projects[0];assert.equal(p.team[2].department,'Quality');
   assert.equal((await f.post('projects/command',{projectId,targetId:'missing',text:'Hello'})).status,400);
   await f.post('projects/discuss',{projectId});
   await f.post('projects/command',{projectId,targetId:p.team[1].id,text:'List assumptions explicitly.'});
@@ -109,6 +111,9 @@ test('request origin and client marker are checked',async t=>{
 test('task and organization graphs reject cycles and invalid owners',()=>{
   const agents=[{id:'a',name:'A',role:'Lead',level:1},{id:'b',name:'B',role:'Worker',level:2}];
   assert.throws(()=>validateTeam([{...agents[0],managerId:'b'},agents[1]],3));
+  validateTeam(agents.map(a=>({...a,department:'Engineering'})),3);
+  assert.throws(()=>validateTeam(agents.map(a=>({...a,department:42})),3));
+  assert.throws(()=>validateTeam(agents.map(a=>({...a,department:'x'.repeat(61)})),3));
   const task=(id,dependsOn)=>({id,title:id,description:'Work',acceptance:'Check',agentId:'a',dependsOn});
   assert.throws(()=>validatePlan({summary:'S',tasks:[task('a',['b']),task('b',['a'])]},agents));
   assert.throws(()=>validatePlan({summary:'S',tasks:[task('a',['missing'])]},agents));
