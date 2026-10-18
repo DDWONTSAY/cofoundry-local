@@ -5,7 +5,38 @@ import os from 'node:os';
 import path from 'node:path';
 import {createApp} from '../server.mjs';
 import {callProvider,renderTemplate} from '../lib/providers.mjs';
-import {validatePlan,validateTeam} from '../lib/domain.mjs';
+import {validatePlan,validateTeam,conversationFor} from '../lib/domain.mjs';
+
+test('message intent controls task context without changing approved scope',async t=>{
+  const prompts=[];
+  const f=await fixture(t,async(provider,messages)=>{prompts.push(messages.at(-1).content);return {text:'Acknowledged'};});
+  const {id:projectId}=await f.post('projects/create',{goal:'Synthetic context test'});
+  const provider=await f.post('providers/save',{name:'Mock',model:'mock',endpoint:'https://example.invalid/chat',protocol:'chat'});
+  let p=(await f.state()).projects[0];
+  await f.post('projects/save',{projectId,mode:'live',team:p.team.map(a=>({...a,providerId:provider.id}))});
+  const plan={summary:'Approved scope',risks:'',tasks:[{id:'A',title:'Draft',description:'Write text',acceptance:'Text exists',agentId:p.team[0].id,dependsOn:[]}]};
+  await f.post('projects/plan',{projectId,plan});await f.post('projects/approve',{projectId});
+  const approval=(await f.state()).projects[0].approval.hash;
+  for(const [intent,text] of [['question','QUESTION_ONLY'],['plan_change','CHANGE_ONLY'],['instruction','TASK_REQUIREMENT']]){
+    const receipt=await f.post('projects/command',{projectId,intent,text,targetId:p.team[0].id});
+    assert.equal(receipt.planChanged,false);assert.equal(receipt.intent,intent);await f.idle();
+  }
+  assert.equal((await f.post('projects/command',{projectId,intent:'auto_approve',text:'invalid'})).status,400);
+  p=(await f.state()).projects[0];assert.equal(p.approval.hash,approval);assert.deepEqual(p.plan,plan);
+  prompts.length=0;await f.post('projects/execute',{projectId});p=(await f.idle()).projects[0];
+  assert.match(prompts[0],/TASK_REQUIREMENT/);assert.doesNotMatch(prompts[0],/QUESTION_ONLY|CHANGE_ONLY/);
+  assert.equal(p.commands[0].contextUses.length,0);assert.equal(p.commands[1].contextUses.length,0);assert.equal(p.commands[2].contextUses.length,1);
+  assert.equal(p.commands[2].contextUses[0].agentId,p.team[0].id);
+  assert.deepEqual(conversationFor({commands:[{text:'failed',status:'failed'},{text:'other',targetId:'other',status:'done'}]},'a'),[]);
+});
+
+test('provider failures have actionable diagnostics and never echo secret response bodies',async()=>{
+  const p={name:'Mock',model:'mock',protocol:'chat',endpoint:'https://example.invalid/chat',apiKey:'test-only-secret'};
+  await assert.rejects(callProvider(p,[],{fetchImpl:async()=>new Response('test-only-secret',{status:429})}),/HTTP 429/);
+  await assert.rejects(callProvider(p,[],{fetchImpl:async()=>new Response('test-only-secret')}),error=>/JSON/.test(error.message)&&!error.message.includes('test-only-secret'));
+  await assert.rejects(callProvider(p,[],{fetchImpl:async()=>{throw new TypeError('test-only-secret',{cause:{code:'ECONNRESET'}});}}),/网络.*ECONNRESET/);
+  await assert.rejects(callProvider(p,[],{fetchImpl:async()=>new Response(JSON.stringify({choices:[{finish_reason:'length',message:{content:'partial'}}]}))}),/长度上限/);
+});
 
 test('English demo and targeted instructions preserve approval and persist replies',async t=>{
   const f=await fixture(t),created=await f.post('projects/create',{name:'English demo',goal:'Write a report',locale:'en'}),projectId=created.id;

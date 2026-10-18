@@ -21,7 +21,8 @@ public class Result { public string status,text,error,startedAt,finishedAt; }
 public class Event { public string at,text; }
 public class Provider { public string id,name,model,endpoint,protocol,bodyTemplate,headerTemplate,responsePath; public bool hasKey; }
 public class CommandReply { public string agentId,agentName,text; }
-public class ProjectCommand { public string id,text,targetId,status,at,error; public List<CommandReply> replies; }
+public class CommandUse { public string agentId,at; public int call; }
+public class ProjectCommand { public string id,text,targetId,status,at,error,intent; public int planRevision; public bool receivedDuringRun; public List<CommandUse> contextUses; public List<CommandReply> replies; }
 public class Project {
   public string locale; public List<ProjectCommand> commands;
   public string id,name,goal,constraints,mode,status,error,review,updatedAt;

@@ -1,10 +1,10 @@
 # Cofoundry Local
 
-> **Early-stage and immature — help improving this project is welcome.** Please contribute code reviews, fixes, usability feedback, and improvement suggestions. **Live model API testing has not yet been performed.**
+> **Early-stage and immature — help improving this project is welcome.** Please contribute code reviews, fixes, usability feedback, and improvement suggestions. **Live API validation is partial; full acceptance has not passed.**
 
 A local multi-model AI project workspace with configurable team hierarchies, collaborative planning, human approval, and parallel text delivery. Includes a native Windows desktop application and a local web interface.
 
-> **Experimental — live API testing has not been performed.** As of October 18, 2026, validation covers offline demos, mock API adapters, automated backend tests, and desktop self-tests only. Connections to real model providers have not been tested; provider compatibility, real-model replies, and end-to-end live workflows remain unverified.
+> **Experimental — partial live API validation.** On October 18, 2026, a synthetic DeepSeek Flash test exercised connection, collaborative planning, plan editing/approval, two task deliveries, review, and a direct member reply. The final team conversation was incomplete; a bounded retry failed at the network layer. Full end-to-end acceptance and other providers remain unverified. See [the test record](desktop/LIVE-API-VALIDATION.md).
 
 [中文使用说明](README.zh-CN.md)
 
@@ -17,6 +17,8 @@ The Team page now defaults to an interactive organization chart. Click a member 
 Functional departments are optional, editable member attributes (for example, Engineering, Design, Research, or Quality). The organization chart uses department columns and role-level rows; solid lines retain the configured reporting relationships. Project details groups recipient cards by department and shows each member's manager and model. Existing teams are not reassigned automatically: blank departments appear as Department not assigned. Three levels can represent department leadership, specialist leads, and contributors; use a fourth only when needed. This is a visual organization aid, not an additional authorization layer: human approval and direct member instructions remain available. The grouping follows the specialization principle described in [PMI's organizational alternatives](https://www.pmi.org/learning/library/organizational-alternatives-project-management-techniques-strategies-5690).
 
 Details & instructions shows the current plan, task progress, deliverables, activity, and a persistent instruction thread. Address the whole team or one member. Instructions received during execution are included in subsequent model calls; replies are queued until the current run finishes. Sending an instruction does not modify or approve the plan. Scope changes must be incorporated into a revised plan and approved. Replies consume the normal project API call budget. Each project supports up to 100 instructions of up to 8,000 characters each.
+
+The desktop composer distinguishes **Question**, **Instruction**, and **Plan change**. Questions stay in the conversation; instructions are included in subsequent relevant task requests; plan-change messages request advice only and must be manually incorporated and approved. Processing details record how many subsequent task requests included an instruction, not whether a model fulfilled it. In-flight requests and completed results are unchanged. Failed instructions are excluded from new task contexts. Legacy messages retain instruction behavior.
 
 The conversation uses distinct sender colors, timestamps, and queued/replying/completed/error states. Send with Ctrl+Enter and continue typing while replies update. Each member receives their relevant conversation history (the latest 20 instructions and their own replies). Responses appear when a call finishes; token streaming is not supported. Pause stops current work and cancels queued instructions; send a new message to resume the conversation.
 

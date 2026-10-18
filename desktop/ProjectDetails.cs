@@ -26,6 +26,8 @@ public partial class MainForm {
   Label detailHeading,detailSubtitle,detailProgress,detailSendTo,detailHistoryCount;
   Button detailSend,detailPause;
   ComboBox detailHistoryFilter;
+  ComboBox detailIntent;
+  readonly Dictionary<string,string> detailIntents=new Dictionary<string,string>();
   string detailProjectId,detailTarget="",detailSnapshot,detailHistorySnapshot,detailPlanSnapshot;
   bool detailUpdating,detailSending;
   readonly Dictionary<string,string> detailTargets=new Dictionary<string,string>();
@@ -107,14 +109,17 @@ public partial class MainForm {
     header.Controls.Add(detailProgress);header.Controls.Add(detailSubtitle);header.Controls.Add(detailHeading);
     var historyToggle=DetailButton(Ui.T("输出历史"),()=>{detailHistoryOverride=!(detailColumns.ColumnStyles[2].Width>0);LayoutDetailColumns();},34);historyToggle.Dock=DockStyle.Top;detailCenter.Controls.Add(historyToggle);
 
-    var composer=new Panel{Dock=DockStyle.Bottom,Height=Dpx(174),BackColor=Color.FromArgb(248,250,252),Padding=new Padding(Dpx(12))};
+    var composer=new Panel{Dock=DockStyle.Bottom,Height=Dpx(212),BackColor=Color.FromArgb(248,250,252),Padding=new Padding(Dpx(12))};
     detailSendTo=DetailLabel("",27,false);detailSendTo.Dock=DockStyle.Top;
     detailInput=new TextBox{Multiline=true,MaxLength=8000,Dock=DockStyle.Fill,ScrollBars=ScrollBars.Vertical,BorderStyle=BorderStyle.None,BackColor=composer.BackColor,AcceptsReturn=true,AccessibleName=Ui.T("消息或新指令")};
     var buttons=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=Dpx(48),AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,FlowDirection=FlowDirection.LeftToRight,WrapContents=true};
     detailSend=Button(Ui.T("发送  Ctrl+Enter"),async()=>await SendDetailMessage(),true);detailSend.Width=Dpx(160);detailSend.Height=Dpx(36);
     detailPause=Button(Ui.T("暂停"),async()=>await PauseDetailWork(),false);detailPause.Width=Dpx(82);detailPause.Height=Dpx(36);
     buttons.Controls.Add(detailSend);buttons.Controls.Add(detailPause);
-    composer.Controls.Add(detailInput);composer.Controls.Add(buttons);composer.Controls.Add(detailSendTo);SoftUi.Round(composer,Dpx(16));
+    detailIntent=new ComboBox{Dock=DockStyle.Top,DropDownStyle=ComboBoxStyle.DropDownList,AccessibleName=Ui.T("消息用途")};
+    detailIntent.Items.Add(new Choice("instruction",Ui.T("补充要求 · 用于后续任务")));detailIntent.Items.Add(new Choice("question",Ui.T("提问 · 仅对话")));detailIntent.Items.Add(new Choice("plan_change",Ui.T("建议修改计划 · 仍需手动编辑并批准")));detailIntent.SelectedIndex=0;
+    detailIntent.SelectedIndexChanged+=(s,e)=>{if(!detailUpdating)detailIntents[DraftKey()]=ChoiceValue(detailIntent);};
+    composer.Controls.Add(detailInput);composer.Controls.Add(buttons);composer.Controls.Add(detailIntent);composer.Controls.Add(detailSendTo);SoftUi.Round(composer,Dpx(16));
     detailMessages=DetailFlow(Color.White);detailMessages.Padding=new Padding(0,Dpx(12),0,Dpx(12));
     detailCenter.Controls.Add(detailMessages);detailCenter.Controls.Add(composer);detailCenter.Controls.Add(header);detailCenter.Controls.SetChildIndex(historyToggle,1);detailCenter.Controls.SetChildIndex(detailMessages,0);
     detailMessages.SizeChanged+=(s,e)=>LayoutDetailMessages();
@@ -149,6 +154,7 @@ public partial class MainForm {
     if(target!=""&&!p.team.Any(a=>a.id==target))return;
     detailTarget=target;detailTargets[p.id]=target;
     detailUpdating=true;string draft;detailInput.Text=detailDrafts.TryGetValue(DraftKey(),out draft)?draft:"";detailUpdating=false;
+    detailUpdating=true;string intent;detailIntents.TryGetValue(DraftKey(),out intent);detailIntent.SelectedIndex=intent=="question"?1:intent=="plan_change"?2:0;detailUpdating=false;
     foreach(var pair in detailPeople){pair.Value.BackColor=pair.Key==target?Color.FromArgb(224,231,255):Color.White;pair.Value.FlatAppearance.BorderColor=pair.Key==target?green:Color.FromArgb(226,232,240);}
     detailHeading.Text=RecipientName(p,target);
     var member=p.team.FirstOrDefault(a=>a.id==target);
@@ -162,7 +168,7 @@ public partial class MainForm {
     string projectId=detailProjectId,target=detailTarget,key=DraftKey();
     detailSending=true;busy=true;detailSend.Enabled=false;detailSend.Text=Ui.T("正在发送…");detailLeft.Enabled=false;detailInput.ReadOnly=true;
     try{
-      await Post("projects/command",new{projectId,targetId=target,text=message});
+      await Post("projects/command",new{projectId,targetId=target,text=message,intent=ChoiceValue(detailIntent)});
       detailDrafts.Remove(key);
       detailUpdating=true;detailInput.Clear();detailUpdating=false;
       await RefreshState();RefreshDetailsChat(Current);
@@ -194,6 +200,11 @@ public partial class MainForm {
       foreach(var item in commands){
         AddDetailBubble(Ui.T("你")+" · "+DetailTime(item.at),item.text,true);
         foreach(var reply in item.replies??new List<CommandReply>())AddDetailBubble(reply.agentName,reply.text,false);
+        string receipt=item.intent=="question"?Ui.T("此消息仅用于对话，不作为后续任务要求。"):item.intent=="plan_change"?Ui.T("计划尚未修改。请到“计划讨论与审批”编辑并批准新版本。"):Ui.T("补充要求仅适用于后续任务请求，不会重写已完成的成果或自动修改计划。");
+        if(item.contextUses!=null&&item.contextUses.Count>0)receipt+="\n"+Ui.T("已传入后续任务请求次数：")+item.contextUses.Count+Ui.T("（不代表模型已完成要求）");
+        if(item.receivedDuringRun)receipt+="\n"+Ui.T("发送时项目正在运行；已发出的请求不会改变。");
+        if(item.status=="failed")receipt+="\n"+Ui.T("消息未完成，已停止用于新的任务请求；此前发出的请求不受影响。");
+        AddDetailBubble(Ui.T("处理说明"),receipt,false);
         if(item.status!="done")AddDetailBubble(CommandStatus(item.status),item.error??(item.status=="queued"?Ui.T("等待当前运行完成后回复。"):Ui.T("模型正在处理，请稍候…")),false);
       }
       LayoutDetailMessages();detailMessages.ResumeLayout();
@@ -261,10 +272,11 @@ public partial class MainForm {
     detailHistoryOverride=null;ClientSize=oldSize;PerformLayout();LayoutDetailColumns();
     if(detailWorkspace==null||detailWorkspace.IsDisposed||detailPeople.Count!=p.team.Count+1)throw new Exception("Missing detail workspace or recipient cards");
     if(!DetailCommands(p).SelectMany(c=>c.replies).Any(r=>r.text=="Reply visible"))throw new Exception("Conversation reply missing");
-    detailInput.Text="Team draft";SelectDetailTarget("b");detailInput.Text="Member draft";
+    detailInput.Text="Team draft";detailIntent.SelectedIndex=1;SelectDetailTarget("b");detailInput.Text="Member draft";detailIntent.SelectedIndex=2;
     RefreshDetailsChat(p);if(detailInput.Text!="Member draft"||detailTarget!="b")throw new Exception("Polling changed recipient or draft");
-    SelectDetailTarget("");if(detailInput.Text!="Team draft")throw new Exception("Team draft lost");
-    SelectDetailTarget("b");if(detailInput.Text!="Member draft"||DetailCommands(p).Any())throw new Exception("Private conversation mixed with team conversation");
+    SelectDetailTarget("");if(detailInput.Text!="Team draft"||ChoiceValue(detailIntent)!="question")throw new Exception("Team draft or intent lost");
+    SelectDetailTarget("b");if(detailInput.Text!="Member draft"||ChoiceValue(detailIntent)!="plan_change"||DetailCommands(p).Any())throw new Exception("Private conversation mixed with team conversation");
+    detailInput.Parent.PerformLayout();if(detailInput.Height<Dpx(35)||detailInput.Bounds.IntersectsWith(detailIntent.Bounds))throw new Exception("Composer input is crowded by intent selector");
     if(!CollectDetailHistory(p).Any(e=>e.Text=="Reply visible"))throw new Exception("Output history missing reply");
     ClearDetailDrafts();detailUpdating=true;detailInput.Clear();detailUpdating=false;dirty=false;
   }
