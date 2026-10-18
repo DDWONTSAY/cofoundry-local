@@ -292,5 +292,8 @@
   "汇报给：": "Reports to: ",
   "项目决策者": "Project decision maker",
   "按职能部门分栏，纵向显示职位层级。点击卡片编辑部门、岗位和模型；实线表示已配置的直属汇报关系。": "Columns group functional departments; rows show role levels. Click a card to edit. Solid lines show configured reporting relationships.",
-  "职能部门须为不超过 60 字的文本": "Department must be text of up to 60 characters."
+  "职能部门须为不超过 60 字的文本": "Department must be text of up to 60 characters.",
+  "输出历史": "Output history",
+  "正在发送…": "Sending…",
+  "↔ 横向滚动查看负责人和 API 连接；成员名称固定在左侧。修改完成后点击“保存团队”。": "↔ Scroll horizontally for managers and API connections. Member names stay on the left. Click Save team when finished."
 }

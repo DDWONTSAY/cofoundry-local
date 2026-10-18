@@ -7,6 +7,19 @@ using System.Windows.Forms;
 
 namespace Cofoundry {
 public partial class MainForm {
+  TableLayoutPanel detailColumns;
+  Panel detailHistoryPane;
+  bool? detailHistoryOverride;
+  void LayoutDetailColumns(){
+    if(detailColumns==null||detailColumns.IsDisposed||detailHistoryPane==null)return;
+    bool show=detailHistoryOverride??(detailWorkspace.ClientSize.Width>=Dpx(1180));
+    detailColumns.SuspendLayout();
+    detailColumns.ColumnStyles[0].SizeType=SizeType.Absolute;
+    detailColumns.ColumnStyles[0].Width=Math.Min(Dpx(270),Math.Max(Dpx(210),detailWorkspace.ClientSize.Width*.22F));
+    detailColumns.ColumnStyles[1].SizeType=SizeType.Percent;detailColumns.ColumnStyles[1].Width=100;
+    detailColumns.ColumnStyles[2].SizeType=SizeType.Absolute;detailColumns.ColumnStyles[2].Width=show?Math.Min(Dpx(280),detailWorkspace.ClientSize.Width*.24F):0;
+    detailHistoryPane.Visible=show;detailColumns.ResumeLayout();FitDetailFlow(detailLeft);FitDetailFlow(detailHistory);LayoutDetailMessages();
+  }
   Panel detailWorkspace,detailCenter;
   FlowLayoutPanel detailLeft,detailMessages,detailHistory,detailPlanPanel;
   TextBox detailInput;
@@ -30,14 +43,14 @@ public partial class MainForm {
   bool HasDetailDraft(){return detailDrafts.Any(k=>k.Key.StartsWith(detailProjectId+"/",StringComparison.Ordinal)&&!String.IsNullOrEmpty(k.Value));}
 
   FlowLayoutPanel DetailFlow(Color color){return new FlowLayoutPanel{Dock=DockStyle.Fill,AutoScroll=true,FlowDirection=FlowDirection.TopDown,WrapContents=false,BackColor=color,Padding=new Padding(Dpx(14))};}
-  Label DetailLabel(string text,int height,bool bold){return new Label{Text=text,Height=Dpx(height),AutoSize=false,ForeColor=ink,Font=bold?new Font(Font,FontStyle.Bold):Font,Margin=new Padding(0,0,0,Dpx(10))};}
+  Label DetailLabel(string text,int height,bool bold){return new Label{Text=text,Height=Dpx(height),AutoSize=false,AutoEllipsis=true,ForeColor=ink,Font=bold?new Font(Font,FontStyle.Bold):Font,Margin=new Padding(0,0,0,Dpx(10))};}
   Button DetailButton(string text,Action action,int height){
-    var button=Button(text,action,false);button.Height=Dpx(height);button.Margin=new Padding(0,0,0,Dpx(10));button.TextAlign=ContentAlignment.MiddleLeft;button.Padding=new Padding(Dpx(12),Dpx(4),Dpx(8),Dpx(4));return button;
+    var button=Button(text,action,false);button.Height=Dpx(height);button.Tag=Dpx(height);button.Margin=new Padding(0,0,0,Dpx(10));button.TextAlign=ContentAlignment.MiddleLeft;button.Padding=new Padding(Dpx(12),Dpx(4),Dpx(8),Dpx(4));return button;
   }
   void FitDetailFlow(FlowLayoutPanel panel){
     if(panel==null||panel.IsDisposed)return;
     int width=Math.Max(80,panel.ClientSize.Width-panel.Padding.Horizontal-SystemInformation.VerticalScrollBarWidth-2);
-    foreach(Control child in panel.Controls)child.Width=width;
+    foreach(Control child in panel.Controls){child.Width=width;var button=child as Button;if(button!=null&&button.Tag is int){int measured=TextRenderer.MeasureText(button.Text,button.Font,new Size(Math.Max(40,width-button.Padding.Horizontal-16),0),TextFormatFlags.WordBreak|TextFormatFlags.NoPrefix).Height;button.Height=Math.Max((int)button.Tag,measured+button.Padding.Vertical+Dpx(12));}}
   }
   FlowLayoutPanel DetailDisclosure(string heading){
     var box=new FlowLayoutPanel{AutoSize=true,FlowDirection=FlowDirection.TopDown,WrapContents=false,Visible=false,Margin=new Padding(0,0,0,Dpx(12))};
@@ -56,16 +69,16 @@ public partial class MainForm {
     string saved;detailTarget=detailTargets.TryGetValue(p.id,out saved)?saved:"";
     if(detailTarget!=""&&!p.team.Any(a=>a.id==detailTarget))detailTarget="";
     detailSnapshot=null;detailHistorySnapshot=null;detailPlanSnapshot=null;detailPeople.Clear();
-    detailWorkspace=new Panel{Dock=DockStyle.Fill,BackColor=Color.White};
+    detailWorkspace=new Panel{Dock=DockStyle.Fill,BackColor=Color.FromArgb(241,245,249),Padding=new Padding(Dpx(8))};
     main.Controls.Add(detailWorkspace);detailWorkspace.BringToFront();
-    var columns=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=3,RowCount=1,Margin=Padding.Empty,Padding=Padding.Empty};
-    columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,22));
-    columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,54));
-    columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,24));
-    columns.RowStyles.Add(new RowStyle(SizeType.Percent,100));
-    detailWorkspace.Controls.Add(columns);
+    detailColumns=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=3,RowCount=1,Margin=Padding.Empty,Padding=Padding.Empty};
+    detailColumns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,22));
+    detailColumns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,54));
+    detailColumns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,24));
+    detailColumns.RowStyles.Add(new RowStyle(SizeType.Percent,100));
+    detailWorkspace.Controls.Add(detailColumns);
 
-    detailLeft=DetailFlow(Color.FromArgb(245,246,248));detailLeft.Margin=Padding.Empty;columns.Controls.Add(detailLeft,0,0);
+    detailLeft=DetailFlow(Color.FromArgb(245,246,248));detailLeft.Margin=new Padding(0,0,Dpx(8),0);detailColumns.Controls.Add(detailLeft,0,0);
     detailLeft.Controls.Add(DetailButton(Ui.T("← 返回工作空间"),()=>Navigate("overview"),40));
     detailLeft.Controls.Add(DetailLabel(p.name,48,true));
     var all=DetailButton("◉  "+Ui.T("项目总体")+"\n"+Ui.T("向整个团队下达命令"),()=>SelectDetailTarget(""),64);detailPeople[""]=all;detailLeft.Controls.Add(all);
@@ -86,40 +99,43 @@ public partial class MainForm {
     detailLeft.Controls.Add(DetailButton(Ui.T("管理组织与模型"),()=>Navigate("team"),40));
     detailLeft.SizeChanged+=(s,e)=>FitDetailFlow(detailLeft);
 
-    detailCenter=new Panel{Dock=DockStyle.Fill,BackColor=Color.White,Margin=Padding.Empty,Padding=new Padding(Dpx(20),Dpx(14),Dpx(20),Dpx(12))};columns.Controls.Add(detailCenter,1,0);
+    detailCenter=new Panel{Dock=DockStyle.Fill,BackColor=Color.White,Margin=new Padding(0,0,Dpx(8),0),Padding=new Padding(Dpx(16),Dpx(14),Dpx(20),Dpx(12))};detailColumns.Controls.Add(detailCenter,1,0);
     var header=new Panel{Dock=DockStyle.Top,Height=Dpx(100)};
     detailHeading=DetailLabel("",30,true);detailHeading.Dock=DockStyle.Top;detailHeading.Font=new Font(Font.FontFamily,15F,FontStyle.Bold);
     detailSubtitle=DetailLabel("",28,false);detailSubtitle.Dock=DockStyle.Top;detailSubtitle.ForeColor=Color.DimGray;
     detailProgress=DetailLabel("",30,false);detailProgress.Dock=DockStyle.Top;detailProgress.ForeColor=Color.DimGray;
     header.Controls.Add(detailProgress);header.Controls.Add(detailSubtitle);header.Controls.Add(detailHeading);
+    var historyToggle=DetailButton(Ui.T("输出历史"),()=>{detailHistoryOverride=!(detailColumns.ColumnStyles[2].Width>0);LayoutDetailColumns();},34);historyToggle.Dock=DockStyle.Top;detailCenter.Controls.Add(historyToggle);
 
     var composer=new Panel{Dock=DockStyle.Bottom,Height=Dpx(174),BackColor=Color.FromArgb(248,250,252),Padding=new Padding(Dpx(12))};
     detailSendTo=DetailLabel("",27,false);detailSendTo.Dock=DockStyle.Top;
     detailInput=new TextBox{Multiline=true,MaxLength=8000,Dock=DockStyle.Fill,ScrollBars=ScrollBars.Vertical,BorderStyle=BorderStyle.None,BackColor=composer.BackColor,AcceptsReturn=true,AccessibleName=Ui.T("消息或新指令")};
-    var buttons=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=Dpx(48),FlowDirection=FlowDirection.LeftToRight,WrapContents=false};
+    var buttons=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=Dpx(48),AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,FlowDirection=FlowDirection.LeftToRight,WrapContents=true};
     detailSend=Button(Ui.T("发送  Ctrl+Enter"),async()=>await SendDetailMessage(),true);detailSend.Width=Dpx(160);detailSend.Height=Dpx(36);
     detailPause=Button(Ui.T("暂停"),async()=>await PauseDetailWork(),false);detailPause.Width=Dpx(82);detailPause.Height=Dpx(36);
     buttons.Controls.Add(detailSend);buttons.Controls.Add(detailPause);
-    composer.Controls.Add(detailInput);composer.Controls.Add(buttons);composer.Controls.Add(detailSendTo);
+    composer.Controls.Add(detailInput);composer.Controls.Add(buttons);composer.Controls.Add(detailSendTo);SoftUi.Round(composer,Dpx(16));
     detailMessages=DetailFlow(Color.White);detailMessages.Padding=new Padding(0,Dpx(12),0,Dpx(12));
-    detailCenter.Controls.Add(detailMessages);detailCenter.Controls.Add(composer);detailCenter.Controls.Add(header);
+    detailCenter.Controls.Add(detailMessages);detailCenter.Controls.Add(composer);detailCenter.Controls.Add(header);detailCenter.Controls.SetChildIndex(historyToggle,1);detailCenter.Controls.SetChildIndex(detailMessages,0);
     detailMessages.SizeChanged+=(s,e)=>LayoutDetailMessages();
 
-    var historyPane=new Panel{Dock=DockStyle.Fill,BackColor=Color.FromArgb(248,250,252),Margin=Padding.Empty,Padding=new Padding(Dpx(10),Dpx(16),Dpx(6),0)};columns.Controls.Add(historyPane,2,0);
+    detailHistoryPane=new Panel{Dock=DockStyle.Fill,BackColor=Color.FromArgb(248,250,252),Margin=Padding.Empty,Padding=new Padding(Dpx(10),Dpx(16),Dpx(6),0)};detailColumns.Controls.Add(detailHistoryPane,2,0);
     var historyHeader=new Panel{Dock=DockStyle.Top,Height=Dpx(98)};
     var historyTitle=DetailLabel(Ui.T("模型输出历史"),30,true);historyTitle.Dock=DockStyle.Top;
     detailHistoryFilter=new ComboBox{Dock=DockStyle.Top,DropDownStyle=ComboBoxStyle.DropDownList,AccessibleName=Ui.T("筛选输出成员")};
     detailHistoryFilter.Items.Add(new Choice("",Ui.T("全部成员")));foreach(var agent in p.team)detailHistoryFilter.Items.Add(new Choice(agent.id,agent.name));detailHistoryFilter.SelectedIndex=0;
     detailHistoryCount=DetailLabel("",28,false);detailHistoryCount.Dock=DockStyle.Bottom;detailHistoryCount.ForeColor=Color.DimGray;
     historyHeader.Controls.Add(detailHistoryFilter);historyHeader.Controls.Add(detailHistoryCount);historyHeader.Controls.Add(historyTitle);
-    detailHistory=DetailFlow(historyPane.BackColor);detailHistory.Padding=new Padding(0,Dpx(10),0,0);
-    historyPane.Controls.Add(detailHistory);historyPane.Controls.Add(historyHeader);
+    detailHistory=DetailFlow(detailHistoryPane.BackColor);detailHistory.Padding=new Padding(0,Dpx(10),0,0);
+    detailHistoryPane.Controls.Add(detailHistory);detailHistoryPane.Controls.Add(historyHeader);
     detailHistory.SizeChanged+=(s,e)=>FitDetailFlow(detailHistory);
     detailHistoryFilter.SelectedIndexChanged+=(s,e)=>{detailHistorySnapshot=null;RefreshDetailsChat(Current);};
 
-    detailInput.TextChanged+=(s,e)=>{if(detailUpdating)return;detailDrafts[DraftKey()]=detailInput.Text;dirty=HasDetailDraft();UpdateFooter();};
+    detailInput.TextChanged+=(s,e)=>{detailSend.Enabled=!detailSending&&!String.IsNullOrWhiteSpace(detailInput.Text);if(detailUpdating)return;detailDrafts[DraftKey()]=detailInput.Text;dirty=HasDetailDraft();UpdateFooter();};
     detailInput.KeyDown+=(s,e)=>{if(e.Control&&e.KeyCode==Keys.Enter){e.SuppressKeyPress=true;if(!detailSending)detailSend.PerformClick();}};
+    SoftUi.Round(detailCenter,Dpx(18));SoftUi.Round(detailHistoryPane,Dpx(18));detailWorkspace.SizeChanged+=(s,e)=>LayoutDetailColumns();LayoutDetailColumns();
     SelectDetailTarget(detailTarget);
+    detailSend.Enabled=!String.IsNullOrWhiteSpace(detailInput.Text);
     FitDetailFlow(detailLeft);
   }
   void ShowDetailTask(string id){
@@ -137,21 +153,21 @@ public partial class MainForm {
     detailHeading.Text=RecipientName(p,target);
     var member=p.team.FirstOrDefault(a=>a.id==target);
     detailSubtitle.Text=member==null?Ui.T("团队对话 · 每位成员分别回复"):ShortText(member.role+" · "+ModelLabel(member),100);
-    detailSendTo.Text=Ui.T("发送给")+"： "+RecipientName(p,target);
+    detailSendTo.ForeColor=green;detailSendTo.Text="↗ "+Ui.T("发送给")+"： "+RecipientName(p,target);
     detailSnapshot=null;RefreshDetailsChat(p);dirty=HasDetailDraft();UpdateFooter();
   }
   async Task SendDetailMessage(){
     if(detailSending||busy)return;
     string message=detailInput.Text.Trim();if(message.Length==0)return;
     string projectId=detailProjectId,target=detailTarget,key=DraftKey();
-    detailSending=true;busy=true;detailSend.Enabled=false;detailLeft.Enabled=false;detailInput.ReadOnly=true;
+    detailSending=true;busy=true;detailSend.Enabled=false;detailSend.Text=Ui.T("正在发送…");detailLeft.Enabled=false;detailInput.ReadOnly=true;
     try{
       await Post("projects/command",new{projectId,targetId=target,text=message});
       detailDrafts.Remove(key);
       detailUpdating=true;detailInput.Clear();detailUpdating=false;
       await RefreshState();RefreshDetailsChat(Current);
     }catch(Exception ex){MessageBox.Show(this,ex.Message,Ui.T("操作未完成"),MessageBoxButtons.OK,MessageBoxIcon.Warning);}
-    finally{detailSending=false;busy=false;if(!detailInput.IsDisposed){detailSend.Enabled=true;detailLeft.Enabled=true;detailInput.ReadOnly=false;detailInput.Focus();}dirty=HasDetailDraft();UpdateFooter();}
+    finally{detailSending=false;busy=false;if(!detailInput.IsDisposed){detailSend.Text=Ui.T("发送  Ctrl+Enter");detailSend.Enabled=!String.IsNullOrWhiteSpace(detailInput.Text);detailLeft.Enabled=true;detailInput.ReadOnly=false;detailInput.Focus();}dirty=HasDetailDraft();UpdateFooter();}
   }
   async Task PauseDetailWork(){
     if(detailSending||busy)return;busy=true;
@@ -165,6 +181,8 @@ public partial class MainForm {
   void RefreshDetailsChat(Project p){
     if(p==null||detailWorkspace==null||detailWorkspace.IsDisposed||p.id!=detailProjectId)return;
     detailProgress.Text=p.results.Values.Count(r=>r.status=="done")+" / "+(p.plan==null?0:p.plan.tasks.Count)+Ui.T(" 项任务已提交")+"  ·  "+(p.mode=="demo"?Ui.T("演示模式"):Ui.T("真实 API 模式"));
+    detailProgress.ForeColor=Active?Color.FromArgb(180,100,20):Color.FromArgb(15,118,110);
+    detailProgress.Text=(Active?"●  ":"○  ")+detailProgress.Text;
     detailPause.Enabled=Active&&!detailSending;
     RefreshDetailPlan(p);
     var commands=DetailCommands(p).ToList();string snapshot=json.Serialize(commands);
@@ -187,11 +205,14 @@ public partial class MainForm {
   void AddDetailBubble(string sender,string text,bool user){
     var row=new Panel{Height=Dpx(100),Margin=new Padding(0,0,0,Dpx(16)),Tag=user};
     var bubble=new Panel{BackColor=user?Color.FromArgb(49,46,129):Color.FromArgb(243,244,246),Padding=new Padding(Dpx(14)),Tag=text??""};
+    if(sender==CommandStatus("failed"))bubble.BackColor=Color.FromArgb(255,237,230);
+    else if(sender==CommandStatus("queued")||sender==CommandStatus("running"))bubble.BackColor=Color.FromArgb(255,247,221);
     var label=new Label{Text=sender,ForeColor=user?Color.FromArgb(199,210,254):Color.FromArgb(99,102,112),Height=Dpx(23),Dock=DockStyle.Top};
     var body=new Label{Text=(text??"").Length>1000?(text.Substring(0,1000)+"…"):text,ForeColor=user?Color.White:ink,AutoSize=false,Dock=DockStyle.Fill,UseMnemonic=false};
     bubble.Controls.Add(body);bubble.Controls.Add(label);
     var read=DetailButton(Ui.T("展开阅读"),()=>ReadDocument(text),28);read.Dock=DockStyle.Bottom;read.FlatAppearance.BorderSize=0;read.BackColor=bubble.BackColor;read.ForeColor=user?Color.White:green;read.Height=Dpx(28);read.Padding=Padding.Empty;
-    bubble.Controls.Add(read);row.Controls.Add(bubble);detailMessages.Controls.Add(row);
+    read.FlatAppearance.MouseOverBackColor=user?Color.FromArgb(67,56,155):Color.FromArgb(224,231,255);
+    bubble.Controls.Add(read);SoftUi.Round(bubble,Dpx(16));row.Controls.Add(bubble);detailMessages.Controls.Add(row);
   }
   void LayoutDetailMessages(){
     if(detailMessages==null||detailMessages.IsDisposed)return;
@@ -233,6 +254,11 @@ public partial class MainForm {
     FitDetailFlow(detailHistory);detailHistory.ResumeLayout();detailHistory.AutoScrollPosition=new Point(-scroll.X,-scroll.Y);
   }
   void TestDetailsWorkspace(Project p){
+    var oldSize=ClientSize;
+    ClientSize=new Size(Dpx(1000),Dpx(700));detailHistoryOverride=null;PerformLayout();LayoutDetailColumns();
+    if(detailColumns.ColumnStyles[2].Width!=0)throw new Exception("History must collapse in narrow windows");
+    detailHistoryOverride=true;LayoutDetailColumns();if(detailColumns.ColumnStyles[2].Width<=0)throw new Exception("History toggle did not open");
+    detailHistoryOverride=null;ClientSize=oldSize;PerformLayout();LayoutDetailColumns();
     if(detailWorkspace==null||detailWorkspace.IsDisposed||detailPeople.Count!=p.team.Count+1)throw new Exception("Missing detail workspace or recipient cards");
     if(!DetailCommands(p).SelectMany(c=>c.replies).Any(r=>r.text=="Reply visible"))throw new Exception("Conversation reply missing");
     detailInput.Text="Team draft";SelectDetailTarget("b");detailInput.Text="Member draft";

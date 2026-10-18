@@ -10,6 +10,32 @@ namespace Cofoundry {
 public partial class MainForm {
   bool teamTable;
 
+  void TestTeamLayout(){
+    var original=Size;
+    foreach(int width in new[]{1000,1440}){
+      Size=new Size(width,820);PerformLayout();SizeCards();content.PerformLayout();
+      if(teamGrid.Columns["role"].Width<Dpx(260)||!teamGrid.Columns["name"].Frozen)throw new Exception("Team columns squeezed or member anchor lost");
+      foreach(Control card in content.Controls){
+        FitCard(card);card.PerformLayout();
+        foreach(Control child in card.Controls){
+          if(child.Right>card.ClientSize.Width-card.Padding.Right)throw new Exception("Team control overflow: "+child.GetType().Name);
+          var row=child as FlowLayoutPanel;if(row==null||row.FlowDirection!=FlowDirection.LeftToRight)continue;
+          row.PerformLayout();
+          foreach(Control button in row.Controls)if(button.Right>row.ClientSize.Width||button.Bottom>row.ClientSize.Height)throw new Exception("Team action clipped: "+button.Text);
+        }
+      }
+    }
+    Size=original;
+    using(var surface=new Panel{Size=new Size(240,120),BackColor=Color.FromArgb(241,245,249)})
+    using(var transparent=new Panel{Dock=DockStyle.Fill,BackColor=Color.Transparent})
+    using(var button=new SoftButton{Size=new Size(180,50),BackColor=Color.White})
+    using(var bitmap=new Bitmap(180,50)){
+      surface.Controls.Add(transparent);transparent.Controls.Add(button);button.DrawToBitmap(bitmap,button.ClientRectangle);
+      if(bitmap.GetPixel(0,0).ToArgb()!=surface.BackColor.ToArgb())throw new Exception("Rounded button has an incorrect corner background: "+bitmap.GetPixel(0,0));
+      SoftUi.Round(button,12);if(button.Region!=null)throw new Exception("Rounded controls must not clip native window regions");
+    }
+  }
+
   void RenderTeam(Project p) {
     var header=Card(Ui.T("团队组织"));
     Note(header,Ui.T("按职能部门分栏，纵向显示职位层级。点击卡片编辑部门、岗位和模型；实线表示已配置的直属汇报关系。"),48);
@@ -111,7 +137,7 @@ public class OrganizationChart : Panel {
     AccessibleName=Ui.T("团队组织架构图");
     human=new Label{Text=Ui.T("你 · 项目决策者\n批准计划 / 验收成果"),TextAlign=ContentAlignment.MiddleCenter,BackColor=Color.FromArgb(224,231,255),ForeColor=Color.FromArgb(67,56,202)};Controls.Add(human);
     foreach(var name in project.team.Select(Department).Distinct()){var label=new Label{Text=name,TextAlign=ContentAlignment.MiddleCenter,BackColor=Color.FromArgb(226,232,240),ForeColor=Color.FromArgb(51,65,85)};departments.Add(name,label);Controls.Add(label);}
-    foreach(var a in project.team){var provider=providers.FirstOrDefault(v=>v.id==a.providerId);var b=new Button{Text="L"+a.level+"  "+a.name+"\n"+a.role+"\n"+(provider==null?Ui.T("未绑定模型"):provider.name),AccessibleName=a.name+Ui.T("，层级 ")+a.level,TextAlign=ContentAlignment.MiddleLeft,FlatStyle=FlatStyle.Flat,BackColor=Color.White,ForeColor=Color.FromArgb(30,41,59),Padding=new Padding(Px(14)),Cursor=Cursors.Hand,TabIndex=project.team.IndexOf(a)};b.FlatAppearance.BorderColor=Color.FromArgb(165,180,252);b.FlatAppearance.MouseOverBackColor=Color.FromArgb(238,242,255);b.Click+=(s,e)=>{if(MemberSelected!=null)MemberSelected(a);};nodes.Add(a.id,b);Controls.Add(b);}
+    foreach(var a in project.team){var provider=providers.FirstOrDefault(v=>v.id==a.providerId);var b=new SoftButton{Text="L"+a.level+"  "+a.name+"\n"+a.role+"\n"+(provider==null?Ui.T("未绑定模型"):provider.name),AccessibleName=a.name+Ui.T("，层级 ")+a.level,TextAlign=ContentAlignment.MiddleLeft,FlatStyle=FlatStyle.Flat,BackColor=Color.White,ForeColor=Color.FromArgb(30,41,59),Padding=new Padding(Px(14)),Cursor=Cursors.Hand,TabIndex=project.team.IndexOf(a)};b.FlatAppearance.BorderColor=Color.FromArgb(165,180,252);b.FlatAppearance.MouseOverBackColor=Color.FromArgb(238,242,255);b.Click+=(s,e)=>{if(MemberSelected!=null)MemberSelected(a);};nodes.Add(a.id,b);Controls.Add(b);}
     Resize+=(s,e)=>LayoutNodes();Scroll+=(s,e)=>Invalidate();LayoutNodes();
   }
   void LayoutNodes(){

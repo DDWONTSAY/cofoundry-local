@@ -20,6 +20,8 @@ Opening project details switches to a dedicated three-column workspace. The left
 
 Both editions support Ctrl+S in editable brief, plan, and team pages, preserve unsaved edits when actions are cancelled, retain expanded discussion sections during updates, and offer a separate reader for long text.
 
+The desktop uses soft backgrounds and rounded controls with opaque corner painting. Action rows wrap within their cards, and team bulk editing keeps readable column widths with horizontal scrolling and a frozen member-name column. In smaller detail windows, output history collapses automatically and can be reopened with Output history. Recipient and status labels remain visible alongside the color cues.
+
 ## Status
 
 This repository preserves a development baseline. Backend tests and native UI construction/binding self-tests have passed; the desktop window has been observed loading existing projects. Full desktop interaction, lifecycle, and live provider acceptance are still in progress. See [acceptance tracking](desktop/ACCEPTANCE.md).
