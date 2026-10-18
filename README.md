@@ -1,6 +1,10 @@
 # Cofoundry Local
 
+> **Early-stage and immature — help improving this project is welcome.** Please contribute code reviews, fixes, usability feedback, and improvement suggestions. **Live model API testing has not yet been performed.**
+
 A local multi-model AI project workspace with configurable team hierarchies, collaborative planning, human approval, and parallel text delivery. Includes a native Windows desktop application and a local web interface.
+
+> **Experimental — live API testing has not been performed.** As of October 18, 2026, validation covers offline demos, mock API adapters, automated backend tests, and desktop self-tests only. Connections to real model providers have not been tested; provider compatibility, real-model replies, and end-to-end live workflows remain unverified.
 
 [中文使用说明](README.zh-CN.md)
 
