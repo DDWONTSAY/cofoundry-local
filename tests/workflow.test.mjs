@@ -7,6 +7,25 @@ import {createApp} from '../server.mjs';
 import {callProvider,renderTemplate} from '../lib/providers.mjs';
 import {validatePlan,validateTeam,conversationFor} from '../lib/domain.mjs';
 
+test('snapshots preserve previous content, restore requires approval and never resets usage',async t=>{
+  const f=await fixture(t);const {id:projectId}=await f.post('projects/create',{goal:'Original goal'});
+  await f.post('projects/discuss',{projectId});await f.idle();
+  await f.post('projects/approve',{projectId});await f.post('projects/checkpoint',{projectId});
+  let p=(await f.state()).projects[0];const saved=p.history[0],original=p.plan;
+  await f.post('projects/responsibilities',{projectId,coordinatorId:p.team[1].id,reviewerId:p.team[0].id});
+  p=(await f.state()).projects[0];assert.equal(p.approval,null);assert.equal(p.coordinatorId,p.team[1].id);
+  await f.post('projects/save',{projectId,goal:'Changed goal'});
+  f.db.state.projects[0].calls=7;f.db.save();
+  await f.post('projects/restore',{projectId,snapshotId:saved.id});
+  p=(await f.state()).projects[0];assert.equal(p.goal,'Original goal');assert.deepEqual(p.plan,original);assert.equal(p.approval,null);assert.equal(p.calls,7);assert.equal(p.status,'awaiting_approval');
+  assert.equal((await f.post('projects/execute',{projectId})).status,400);
+  assert.equal((await f.post('projects/restore',{projectId,snapshotId:'missing'})).status,400);
+  for(let i=0;i<12;i++)await f.post('projects/checkpoint',{projectId});
+  p=(await f.state()).projects[0];assert.equal(p.history.length,10);assert.ok(p.history.every(s=>!s.data.history&&!s.data.providers));
+  await f.post('projects/discuss',{projectId});assert.equal((await f.post('projects/restore',{projectId,snapshotId:p.history[0].id})).status,400);await f.idle();
+  const disk=JSON.parse(fs.readFileSync(path.join(f.dataDir,'workspace.json')));assert.ok(disk.projects[0].history.length);
+});
+
 test('message intent controls task context without changing approved scope',async t=>{
   const prompts=[];
   const f=await fixture(t,async(provider,messages)=>{prompts.push(messages.at(-1).content);return {text:'Acknowledged'};});
@@ -108,19 +127,23 @@ test('approval gate, discussion, editing, DAG execution and persisted local secr
   assert.equal(f.db.decrypt(f.db.state.providers[0].secret),'secret-test-key');
 });
 test('live API workflow uses configured arbitrary model and never executes before approval',async t=>{
-  let modelCalls=0;
+  let modelCalls=0,coordinatorName,reviewerName;
   const f=await fixture(t,async(provider,messages)=>{
     assert.equal(provider.model,'my-model');assert.equal(provider.apiKey,'test-key');modelCalls++;
     const prompt=messages.at(-1).content;
     if(prompt.includes('只输出合法 JSON')) {
+      assert.ok(messages[0].content.includes(coordinatorName));
       const roster=JSON.parse(prompt.split('团队：')[1].split('\n讨论内容：')[0]);
       return {text:JSON.stringify({summary:'Real adapter test',risks:'',tasks:[{id:'A',title:'Draft',description:'Write',acceptance:'Text present',agentId:roster[0].id,dependsOn:[]}]})};
     }
+    if(prompt.includes('你担任最终审核员'))assert.ok(messages[0].content.includes(reviewerName));
     return {text:'Mock API response',usage:{total_tokens:10}};
   });
   const provider=await f.post('providers/save',{name:'API',model:'my-model',endpoint:'https://example.invalid/api',protocol:'chat',apiKey:'test-key'});
   const project=await f.post('projects/create',{name:'Live',goal:'Write a report'});const p=(await f.state()).projects[0];
   await f.post('projects/save',{projectId:project.id,mode:'live',team:p.team.map(a=>({...a,providerId:provider.id}))});
+  coordinatorName=p.team[1].name;reviewerName=p.team[0].name;
+  await f.post('projects/responsibilities',{projectId:project.id,coordinatorId:p.team[1].id,reviewerId:p.team[0].id});
   await f.post('projects/discuss',{projectId:project.id});let s=await f.idle();
   assert.equal(modelCalls,7);assert.equal(s.projects[0].status,'awaiting_approval');
   await f.post('projects/execute',{projectId:project.id});assert.equal(modelCalls,7);

@@ -9,6 +9,28 @@ using System.Windows.Forms;
 namespace Cofoundry {
 public partial class MainForm {
   bool teamTable;
+  void ShowSnapshots(Project p){
+    if(!LeaveEdits())return;
+    using(var dialog=Dialog(Ui.T("项目快照"))){
+      var card=DialogCard(dialog);Note(card,Ui.T("保留最近 10 个本机快照。恢复保留累计调用计数，但撤销批准，且不会自动运行。"),65);
+      var snapshots=p.history??new List<ProjectSnapshot>();
+      var picker=Select(card,Ui.T("选择恢复点"),snapshots.Select(s=>new Choice(s.id,s.at+" · v"+s.revision+" · "+Ui.T(s.label))).ToList(),"");
+      var preview=Field(card,Ui.T("快照目标与计划"),"",160);preview.ReadOnly=true;
+      Action show=()=>{var snapshot=snapshots.FirstOrDefault(s=>s.id==ChoiceValue(picker));preview.Text=snapshot==null?"":snapshot.data.goal+Environment.NewLine+(snapshot.data.plan==null?"":snapshot.data.plan.summary);};picker.SelectedIndexChanged+=(s,e)=>show();show();
+      var actions=Actions(card);
+      var save=Button(Ui.T("保存当前快照"),async()=>{dialog.Enabled=false;try{await Post("projects/checkpoint",new{projectId=p.id});dialog.Close();await RefreshState();Render();}catch(Exception ex){MessageBox.Show(dialog,ex.Message);}finally{if(!dialog.IsDisposed)dialog.Enabled=true;}},true);save.Enabled=!Active;actions.Controls.Add(save);
+      var restore=Button(Ui.T("恢复选中快照"),async()=>{if(MessageBox.Show(dialog,Ui.T("恢复会替换当前项目内容，并要求重新批准。当前内容会先保存为快照。继续？"),Ui.T("恢复快照"),MessageBoxButtons.YesNo)!=DialogResult.Yes)return;dialog.Enabled=false;try{await Post("projects/restore",new{projectId=p.id,snapshotId=ChoiceValue(picker)});dialog.Close();await RefreshState();Render();}catch(Exception ex){MessageBox.Show(dialog,ex.Message);}finally{if(!dialog.IsDisposed)dialog.Enabled=true;}},false);restore.Enabled=!Active&&snapshots.Count>0;actions.Controls.Add(restore);dialog.ShowDialog(this);
+    }
+  }
+  void EditResponsibilities(Project p){
+    if(!LeaveEdits())return;
+    using(var dialog=Dialog(Ui.T("汇总与审核职责"))){
+      var card=DialogCard(dialog);Note(card,Ui.T("明确指定计划汇总与最终审核成员；任务仍按已批准计划中的负责人和依赖执行。修改职责会撤销批准。"),70);
+      var coordinator=Select(card,Ui.T("计划汇总成员"),AgentChoices(p),p.coordinatorId??p.team.OrderBy(a=>a.level).First().id);
+      var reviewer=Select(card,Ui.T("最终审核成员"),AgentChoices(p),p.reviewerId??p.team.Last().id);
+      var save=Button(Ui.T("保存职责"),async()=>{dialog.Enabled=false;try{await Post("projects/responsibilities",new{projectId=p.id,coordinatorId=ChoiceValue(coordinator),reviewerId=ChoiceValue(reviewer)});dialog.Close();await RefreshState();Render();}catch(Exception ex){MessageBox.Show(dialog,ex.Message);}finally{if(!dialog.IsDisposed)dialog.Enabled=true;}},true);save.Enabled=!Active;Actions(card).Controls.Add(save);dialog.ShowDialog(this);
+    }
+  }
 
   void TestTeamLayout(){
     var original=Size;
@@ -39,9 +61,13 @@ public partial class MainForm {
   void RenderTeam(Project p) {
     var header=Card(Ui.T("团队组织"));
     Note(header,Ui.T("按职能部门分栏，纵向显示职位层级。点击卡片编辑部门、岗位和模型；实线表示已配置的直属汇报关系。"),48);
+    var coordinator=p.team.FirstOrDefault(a=>a.id==p.coordinatorId)??p.team.OrderBy(a=>a.level).First();
+    var reviewer=p.team.FirstOrDefault(a=>a.id==p.reviewerId)??p.team.Last();
+    Note(header,Ui.T("计划汇总成员")+"： "+coordinator.name+"   ·   "+Ui.T("最终审核成员")+"： "+reviewer.name,36);
     var actions=Actions(header);
     var add=Button(Ui.T("＋ 添加成员"),async()=>await Run(()=>EditMember(p,null,null)),true);add.Enabled=!Active;actions.Controls.Add(add);
     var depth=Button(Ui.T("设置层级 · ")+p.levels,async()=>await Run(()=>EditDepth(p)),false);depth.Enabled=!Active;actions.Controls.Add(depth);
+    actions.Controls.Add(Button(Ui.T("汇总与审核职责"),()=>EditResponsibilities(p),false));
     actions.Controls.Add(Button(teamTable?Ui.T("组织架构图"):Ui.T("表格批量编辑"),()=>{if(LeaveEdits()){teamTable=!teamTable;Render();}},false));
     if(teamTable){RenderTeamTable(p);return;}
     var chart=new OrganizationChart(p,state.providers,uiScale);
@@ -122,12 +148,26 @@ public partial class MainForm {
   }
 }
 
+public class OrganizationNode : SoftButton {
+  public string Heading,Role,Model,Status;
+  protected override void OnPaint(PaintEventArgs e){
+    base.OnPaint(e);float scale=e.Graphics.DpiX/96F;int inset=(int)(14*scale),line=(int)(25*scale);
+    var flags=TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix|TextFormatFlags.SingleLine|TextFormatFlags.VerticalCenter;
+    using(var bold=new Font(Font,FontStyle.Bold))TextRenderer.DrawText(e.Graphics,Heading,bold,new Rectangle(inset,inset,Width-inset*2,line),ForeColor,flags);
+    TextRenderer.DrawText(e.Graphics,Role,Font,new Rectangle(inset,inset+line,Width-inset*2,line),Color.FromArgb(71,85,105),flags);
+    TextRenderer.DrawText(e.Graphics,Model,Font,new Rectangle(inset,inset+2*line,Width-inset*2,line),Color.FromArgb(100,116,139),flags);
+    int footer=Height-line-inset;
+    using(var pen=new Pen(Color.FromArgb(226,232,240)))e.Graphics.DrawLine(pen,inset,footer-5,Width-inset,footer-5);
+    var color=Status.StartsWith("!")?Color.FromArgb(180,83,9):Status.StartsWith("●")?Color.FromArgb(79,70,229):Status.StartsWith("○")?Color.FromArgb(100,116,139):Color.FromArgb(15,118,110);
+    TextRenderer.DrawText(e.Graphics,Status,Font,new Rectangle(inset,footer,Width-inset*2,line),color,flags);
+  }
+}
 public class OrganizationChart : Panel {
   readonly Project project; readonly List<Provider> providers; readonly float scale;
   readonly Dictionary<string,Button> nodes=new Dictionary<string,Button>();
   readonly Dictionary<string,Label> departments=new Dictionary<string,Label>();
   string Department(Agent a){return String.IsNullOrWhiteSpace(a.department)?Ui.T("未设置职能部门"):a.department.Trim();}
-  readonly Label human;
+  readonly Button human; string highlighted;
   public event Action<Agent> MemberSelected;
   protected override bool ScaleChildren {get{return false;}}
   int Px(int value){return (int)Math.Round(value*scale);}
@@ -135,9 +175,9 @@ public class OrganizationChart : Panel {
     project=p;providers=connections;scale=displayScale;DoubleBuffered=true;AutoScroll=true;
     BackColor=Color.FromArgb(248,250,252);Width=850;Height=540;Margin=new Padding(0,18,0,16);
     AccessibleName=Ui.T("团队组织架构图");
-    human=new Label{Text=Ui.T("你 · 项目决策者\n批准计划 / 验收成果"),TextAlign=ContentAlignment.MiddleCenter,BackColor=Color.FromArgb(224,231,255),ForeColor=Color.FromArgb(67,56,202)};Controls.Add(human);
+    human=new SoftButton{FlatStyle=FlatStyle.Flat,Text=Ui.T("你 · 项目决策者\n批准计划 / 验收成果"),TextAlign=ContentAlignment.MiddleCenter,BackColor=Color.FromArgb(224,231,255),ForeColor=Color.FromArgb(67,56,202)};human.FlatAppearance.BorderColor=Color.FromArgb(165,180,252);Controls.Add(human);
     foreach(var name in project.team.Select(Department).Distinct()){var label=new Label{Text=name,TextAlign=ContentAlignment.MiddleCenter,BackColor=Color.FromArgb(226,232,240),ForeColor=Color.FromArgb(51,65,85)};departments.Add(name,label);Controls.Add(label);}
-    foreach(var a in project.team){var provider=providers.FirstOrDefault(v=>v.id==a.providerId);var b=new SoftButton{Text="L"+a.level+"  "+a.name+"\n"+a.role+"\n"+(provider==null?Ui.T("未绑定模型"):provider.name),AccessibleName=a.name+Ui.T("，层级 ")+a.level,TextAlign=ContentAlignment.MiddleLeft,FlatStyle=FlatStyle.Flat,BackColor=Color.White,ForeColor=Color.FromArgb(30,41,59),Padding=new Padding(Px(14)),Cursor=Cursors.Hand,TabIndex=project.team.IndexOf(a)};b.FlatAppearance.BorderColor=Color.FromArgb(165,180,252);b.FlatAppearance.MouseOverBackColor=Color.FromArgb(238,242,255);b.Click+=(s,e)=>{if(MemberSelected!=null)MemberSelected(a);};nodes.Add(a.id,b);Controls.Add(b);}
+    foreach(var a in project.team){var provider=providers.FirstOrDefault(v=>v.id==a.providerId);var b=new OrganizationNode{Heading="L"+a.level+"  "+a.name,Role=a.role,Model=provider==null?Ui.T("未绑定模型"):provider.name,Status=MemberStatus(a),AccessibleName=a.name+Ui.T("，层级 ")+a.level,TextAlign=ContentAlignment.MiddleLeft,FlatStyle=FlatStyle.Flat,BackColor=Color.White,ForeColor=Color.FromArgb(30,41,59),Padding=new Padding(Px(14)),Cursor=Cursors.Hand,TabIndex=project.team.IndexOf(a)};b.FlatAppearance.BorderColor=Color.FromArgb(165,180,252);b.FlatAppearance.MouseOverBackColor=Color.FromArgb(238,242,255);b.Click+=(s,e)=>{if(MemberSelected!=null)MemberSelected(a);};b.MouseEnter+=(s,e)=>{highlighted=a.id;Invalidate();};b.MouseLeave+=(s,e)=>{highlighted=null;Invalidate();};nodes.Add(a.id,b);Controls.Add(b);}
     Resize+=(s,e)=>LayoutNodes();Scroll+=(s,e)=>Invalidate();LayoutNodes();
   }
   void LayoutNodes(){
@@ -145,12 +185,12 @@ public class OrganizationChart : Panel {
     var groups=project.team.GroupBy(Department).ToArray();
     int needed=groups.Sum(g=>g.GroupBy(a=>a.level).Max(l=>l.Count())*Px(252)+Px(24));
     int width=Math.Max(ClientSize.Width-Px(24),needed+Px(48));
-    int height=Px(190+project.levels*182);AutoScrollMinSize=new Size(width,height);
+    int height=Px(190+project.levels*210);AutoScrollMinSize=new Size(width,height);
     var offset=AutoScrollPosition;
     human.Bounds=new Rectangle(offset.X+(width-Px(240))/2,offset.Y+Px(20),Px(240),Px(66));
     int left=(width-needed)/2;
     foreach(var group in groups){int laneWidth=group.GroupBy(a=>a.level).Max(l=>l.Count())*Px(252)+Px(24);departments[group.Key].Bounds=new Rectangle(offset.X+left,offset.Y+Px(112),laneWidth-Px(12),Px(36));
-      foreach(var level in group.GroupBy(a=>a.level)){var people=level.OrderBy(a=>a.managerId??"").ToArray();int start=left+(laneWidth-people.Length*Px(252))/2;for(int i=0;i<people.Length;i++)nodes[people[i].id].Bounds=new Rectangle(offset.X+start+i*Px(252),offset.Y+Px(176+(level.Key-1)*182),Px(234),Px(124));}
+      foreach(var level in group.GroupBy(a=>a.level)){var people=level.OrderBy(a=>a.managerId??"").ToArray();int start=left+(laneWidth-people.Length*Px(252))/2;for(int i=0;i<people.Length;i++)nodes[people[i].id].Bounds=new Rectangle(offset.X+start+i*Px(252),offset.Y+Px(176+(level.Key-1)*210),Px(234),Px(148));}
       left+=laneWidth;
     }
     Invalidate();
@@ -159,11 +199,29 @@ public class OrganizationChart : Panel {
     base.OnPaint(e);e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
     using(var pen=new Pen(Color.FromArgb(148,163,184),Math.Max(1,scale))){
       pen.CustomEndCap=new AdjustableArrowCap(3,4);
-      foreach(var a in project.team){Control parent=String.IsNullOrEmpty(a.managerId)?(Control)human:nodes.ContainsKey(a.managerId)?(Control)nodes[a.managerId]:human;var child=nodes[a.id];int x1=parent.Left+parent.Width/2,y1=parent.Bottom,x2=child.Left+child.Width/2,y2=child.Top;int bend=y1+Px(20);e.Graphics.DrawLines(pen,new[]{new Point(x1,y1),new Point(x1,bend),new Point(x2,bend),new Point(x2,y2)});}
+      foreach(var a in project.team){Control parent=String.IsNullOrEmpty(a.managerId)?(Control)human:nodes.ContainsKey(a.managerId)?(Control)nodes[a.managerId]:human;var child=nodes[a.id];int x1=parent.Left+parent.Width/2,y1=parent.Bottom,x2=child.Left+child.Width/2,y2=child.Top;int bend=y1+Px(20);pen.Color=a.id==highlighted?Color.FromArgb(79,70,229):Color.FromArgb(180,190,205);pen.Width=a.id==highlighted?2*scale:scale;float middle=(y1+y2)/2F;e.Graphics.DrawBezier(pen,new PointF(x1,y1),new PointF(x1,middle),new PointF(x2,middle),new PointF(x2,y2));}
     }
-    using(var brush=new SolidBrush(Color.FromArgb(100,116,139)))for(int level=1;level<=project.levels;level++)e.Graphics.DrawString("L"+level,Font,brush,AutoScrollPosition.X+Px(8),AutoScrollPosition.Y+Px(178+(level-1)*182));
+    using(var brush=new SolidBrush(Color.FromArgb(100,116,139)))for(int level=1;level<=project.levels;level++)e.Graphics.DrawString("L"+level,Font,brush,AutoScrollPosition.X+Px(8),AutoScrollPosition.Y+Px(178+(level-1)*210));
+  }
+  string MemberStatus(Agent a){
+    var tasks=project.plan==null?new List<WorkTask>():project.plan.tasks.Where(t=>t.agentId==a.id).ToList();
+    var results=tasks.Where(t=>project.results!=null&&project.results.ContainsKey(t.id)).Select(t=>project.results[t.id]).ToList();
+    if(results.Any(r=>r.status=="running"))return Ui.T("● 正在执行");
+    if((project.commands??new List<ProjectCommand>()).Any(c=>c.status=="running"&&(String.IsNullOrEmpty(c.targetId)||c.targetId==a.id)&&!c.replies.Any(r=>r.agentId==a.id)))return Ui.T("● 正在回复");
+    if(results.Any(r=>r.status=="failed"))return Ui.T("! 需要处理");
+    if(tasks.Count>0&&results.Count(r=>r.status=="done")==tasks.Count)return Ui.T("✓ 已交付");
+    if(project.status=="discussing")return Ui.T("◌ 团队讨论中");
+    return tasks.Count>0?Ui.T("○ 等待任务"):Ui.T("○ 待命");
   }
   public int NodeCount {get{return nodes.Count;}}
+  public void CheckLayout(){
+    LayoutNodes();var rectangles=nodes.Values.Select(b=>b.Bounds).ToArray();
+    for(int i=0;i<rectangles.Length;i++)for(int j=i+1;j<rectangles.Length;j++)if(rectangles[i].IntersectsWith(rectangles[j]))throw new Exception("Organization cards overlap");
+    if(Environment.GetEnvironmentVariable("COFOUNDRY_CHART_PREVIEW")=="1"){
+      Size=new Size(Px(1000),Px(880));LayoutNodes();
+      using(var bitmap=new Bitmap(Width,Height)){DrawToBitmap(bitmap,ClientRectangle);bitmap.Save(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"artifacts","organization-preview.png"));}
+    }
+  }
   public int DepartmentCount {get{return departments.Count;}}
 }
 }

@@ -10,6 +10,14 @@ A local multi-model AI project workspace with configurable team hierarchies, col
 
 ## Desktop editions and project controls
 
+The organization chart uses rounded role cards, curved reporting lines, hover highlighting, and task/reply status footers. Department columns and explicit level rows remain intact. Status indicators describe recorded activity, not a model's hidden reasoning.
+
+**Planning and review roles** lets you explicitly select the plan coordinator and final reviewer. Existing projects retain the previous defaults until configured. Task owners and dependencies in the approved plan still control execution; reporting lines do not create an additional autonomous delegation system.
+
+**Project snapshots**, on the overview page, saves local restore points manually and before plan edits, project/team changes, responsibility changes, or a new discussion that replaces a plan. Up to 10 snapshots are retained within a four-million-character history limit; large snapshots block the destructive change and request an export. Restore first snapshots the current state, preserves cumulative calls and usage, revokes approval, and never starts a run or replays queued messages. History contains project content, not provider credentials, and is stored in the ignored local data directory. Export important milestones separately; rolling snapshots are not an external backup.
+
+The overview now includes a concise getting-started guide with links to team responsibilities and recovery.
+
 `共创团队.exe` starts the Chinese edition; `Cofoundry.exe` starts the English edition. Both use the same local data and cannot run simultaneously. Existing project content is preserved in its original language. Projects created in the English edition use English default roles, demo outputs, and live-model response instructions. The retained web interface is currently Chinese.
 
 The Team page now defaults to an interactive organization chart. Click a member to edit their role, level, manager, and model connection, or add a direct report. Table editing remains available. Team changes still invalidate prior plans and results.

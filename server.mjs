@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createStore} from './lib/store.mjs';
+import {checkpoint,restoreCheckpoint} from './lib/project-history.mjs';
 import {callProvider,validateProvider} from './lib/providers.mjs';
 import {id,hashPlan,validatePlan,validateTeam,parsePlan,assertApproved,commandIntents,conversationFor} from './lib/domain.mjs';
 
@@ -66,7 +67,7 @@ export function createApp({dataDir=path.join(root,'data'),modelCall=callProvider
       });
       event(p,round===1?'独立提案完成，开始交叉评议':'交叉评议完成，正在整理可编辑计划');
     }
-    const leader=[...p.team].sort((a,b)=>a.level-b.level)[0];
+    const leader=p.team.find(a=>a.id===p.coordinatorId)||[...p.team].sort((a,b)=>a.level-b.level)[0];
     let plan;
     if(p.mode==='demo') {
       const a=p.team;
@@ -106,7 +107,7 @@ export function createApp({dataDir=path.join(root,'data'),modelCall=callProvider
         } catch(e) {p.results[task.id]={...p.results[task.id],status:'failed',error:e.message};touch(p);throw e;}
       });
     }
-    const reviewer=p.team.at(-1);
+    const reviewer=p.team.find(a=>a.id===p.reviewerId)||p.team.at(-1);
     p.review=p.mode==='demo'?'【演示审核】全部示例任务已交付。请人工检查成果。真实 API 模式会根据验收标准生成审核意见。':await ask(p,reviewer,`你担任最终审核员。请逐条检查验收标准，明确通过项、缺失项和需要人工验证的事项，不替用户做最终验收。\n目标：${p.goal}\n计划：${JSON.stringify(p.plan)}\n成果：${JSON.stringify(p.results)}`,signal);
     if(signal.aborted)throw new Error('已暂停');
     if(p.mode==='demo'&&p.locale==='en')p.review='[Demo review] Example tasks are complete. Review manually before accepting.';
@@ -138,6 +139,7 @@ export function createApp({dataDir=path.join(root,'data'),modelCall=callProvider
     if(active.has(p.id))throw new Error('项目正在运行，请先暂停');
     ready(p);
     if(type==='execute')assertApproved(p);
+    if(type==='discuss'&&p.plan)checkpoint(p,'Before discussion');
     const control=new AbortController();active.set(p.id,control);
     (type==='discuss'?discuss(p,control.signal):execute(p,control.signal)).catch(e=>{
       p.status=type==='execute'?'paused':'draft';p.error=control.signal.aborted?'已由用户暂停':e.message;
@@ -197,18 +199,28 @@ export function createApp({dataDir=path.join(root,'data'),modelCall=callProvider
         }
         if(active.has(p.id)||commandWorkers.has(p.id))throw new Error('项目正在运行，请先暂停后再修改');
         switch(url.pathname) {
+          case '/api/projects/checkpoint': checkpoint(p,'Manual snapshot');touch(p);break;
+          case '/api/projects/restore': restoreCheckpoint(p,String(body.snapshotId||''));touch(p);event(p,'Snapshot restored; approval required before execution');break;
+          case '/api/projects/responsibilities': {
+            for(const key of ['coordinatorId','reviewerId'])if(!p.team.some(a=>a.id===body[key]))throw new Error('Invalid responsible member');
+            checkpoint(p,'Before responsibility change');
+            p.coordinatorId=body.coordinatorId;p.reviewerId=body.reviewerId;p.approval=null;p.review=null;
+            p.status=p.plan?'awaiting_approval':'draft';touch(p);break;
+          }
           case '/api/projects/save': {
             const team=body.team || p.team,levels=Number(body.levels ?? p.levels);validateTeam(team,levels);
             const concurrency=Number(body.concurrency ?? p.concurrency),maxCalls=Number(body.maxCalls ?? p.maxCalls);
             if(!Number.isInteger(concurrency)||concurrency<1||concurrency>6||!Number.isInteger(maxCalls)||maxCalls<1||maxCalls>1000)throw new Error('并行数须为 1–6；调用上限须为 1–1000');
             if(!['demo','live'].includes(body.mode ?? p.mode))throw new Error('运行模式无效');
             const changed=JSON.stringify([p.goal,p.constraints,p.team,p.levels,p.mode])!==JSON.stringify([body.goal??p.goal,body.constraints??p.constraints,team,levels,body.mode??p.mode]);
+            if(changed)checkpoint(p,'Before project or team change');
             Object.assign(p,{name:String(body.name??p.name).slice(0,100),goal:String(body.goal??p.goal),constraints:String(body.constraints??p.constraints),team,levels,mode:body.mode??p.mode,concurrency,maxCalls});
+            for(const key of ['coordinatorId','reviewerId'])if(p[key]&&!team.some(a=>a.id===p[key]))delete p[key];
             if(changed) {p.approval=null;p.plan=null;p.results={};p.review=null;p.discussion=[];p.status='draft';event(p,'项目目标或团队已变更，需重新制定并批准计划');}
             touch(p);break;
           }
           case '/api/projects/discuss': launch(p,'discuss');break;
-          case '/api/projects/plan': validatePlan(body.plan,p.team);p.plan=body.plan;p.revision++;p.approval=null;p.results={};p.review=null;p.status='awaiting_approval';touch(p);event(p,'用户修改了计划，等待批准新版本');break;
+          case '/api/projects/plan': validatePlan(body.plan,p.team);if(p.plan)checkpoint(p,'Before plan edit');p.plan=body.plan;p.revision++;p.approval=null;p.results={};p.review=null;p.status='awaiting_approval';touch(p);event(p,'用户修改了计划，等待批准新版本');break;
           case '/api/projects/approve': ready(p);validatePlan(p.plan,p.team);p.approval={hash:hashPlan(p.plan),revision:p.revision,at:new Date().toISOString()};p.status='approved';event(p,`用户批准了计划 v${p.revision}`);break;
           case '/api/projects/execute': launch(p,'execute');break;
           case '/api/projects/accept': if(p.status!=='delivered')throw new Error('请在交付后验收');p.status='completed';event(p,'用户已验收项目');break;
